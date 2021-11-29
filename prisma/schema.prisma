@@ -1,0 +1,66 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator typegraphql {
+  provider = "typegraphql-prisma"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+
+  id             Int           @id @default(autoincrement())
+  orderdetail_FK orderdetail[] @relation(name: "orderdetail_productid_Product_id")
+  productname    String
+  categoryid     Int
+  category       category      @relation(name: "Product_categoryid_category_id", fields: [categoryid], references: [id])
+}
+
+model category {
+
+  id           Int       @id @default(autoincrement())
+  Product_FK   Product[] @relation(name: "Product_categoryid_category_id")
+  categoryname String
+}
+
+model order {
+
+  id             Int           @id @default(autoincrement())
+  orderdetail_FK orderdetail[] @relation(name: "orderdetail_orderid_order_id")
+  ordernumber    Int
+  customerid     Int
+  customer       customer      @relation(name: "order_customerid_customer_id", fields: [customerid], references: [id])
+  paymentid      Int
+  payment        payment       @relation(name: "order_paymentid_payment_id", fields: [paymentid], references: [id])
+}
+
+model customer {
+
+  id           Int     @id @default(autoincrement())
+  order_FK     order[] @relation(name: "order_customerid_customer_id")
+  customername String
+}
+
+model orderdetail {
+
+  orderid   Int
+  order     order   @relation(name: "orderdetail_orderid_order_id", fields: [orderid], references: [id])
+  productid Int
+  Product   Product @relation(name: "orderdetail_productid_Product_id", fields: [productid], references: [id])
+  id        Int     @id @default(autoincrement())
+  price     String
+}
+
+model payment {
+
+  id          Int     @id @default(autoincrement())
+  order_FK    order[] @relation(name: "order_paymentid_payment_id")
+  paymenttype String
+}
