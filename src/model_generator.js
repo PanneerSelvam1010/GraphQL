@@ -4,129 +4,106 @@ const fs = require("fs");
 const path = require("path");
 const { getMetaData } = require("./get_metadata");
 
-getMetaData().then((data) => {
+function validataFieldName(fieldname, entityname) {
+  return fieldname == "_id" ? entityname + "_id" : fieldname;
+}
 
-  var jsonSchema = JSON.parse(data);
+function validateDataType(name, datatype) {
+  var type = "";
+  return type =
+    name == "_id"
+      ? "String"
+      : datatype == "string"
+        ? "String"
+        : datatype === "number"
+          ? "Int"
+          : datatype === "integer"
+            ? "Int"
+            : datatype === "boolean"
+              ? "Boolean"
+              : datatype === "datetime"
+                ? "DateTime"
+                : datatype === "date"
+                  ? "DateTime"
+                  : datatype === "object"
+                    ? "String"
+                    : datatype === "dimension"
+                      ? "String"
+                      : datatype === "array"
+                        ? "String"
+                        : "Unsupported";
+}
 
-  const parseRelationshipArg = (fields) => {
-    fields = fields == "_id" ? "id" : fields;
-    return "[" + fields + "]";
-  };
+function validateAttributes(fieldname) {
+  return fieldname == "_id" ? "@id" : "";
+}
 
-  const parseRelationship = (modelname, field, relationships) => {
-    var relationshipString = "";
-    if (!relationships) {
-      return "";
+function validateRelationships(modelName, fieldName, entityRelationships) {
+  var relationshipString = "";
+
+  for (var i = 0; i < entityRelationships.length; i++) {
+    const sourceEntity = entityRelationships[i].entity_objectname;
+    const sourceColumn = entityRelationships[i].sourceColumn;
+    const targetEntity = entityRelationships[i].target_entity_objectname;
+    const targetColumn = entityRelationships[i].targetColumn;
+
+    const relationName = `name: "${sourceEntity}-${sourceColumn}_${targetEntity}-${targetEntity}_id"`;
+    const relationFields = `fields: [${sourceColumn}], `;
+    const relationReferences = `references: [${targetEntity}_id]`;
+
+    if (modelName == sourceEntity) {
+      if (fieldName == sourceColumn) {
+        relationshipString = `${targetEntity}_${sourceColumn} ${targetEntity} @relation(${relationName}, ${relationFields}${relationReferences})`;
+      }
+    } else if (modelName == targetEntity) {
+      if (fieldName == targetColumn) {
+        relationshipString = `${sourceEntity}_FK ${sourceEntity}[] @relation(${relationName})`;
+      }
     }
-    relationships.map(
-      ({ entity, sourceColumn, targetColumn, target_entity }) => {
-        const relationName = `name: "${entity}_${sourceColumn}_${target_entity}_${targetColumn}"`;
-        if (entity == modelname) {
-          if (field == sourceColumn) {
-            const relationField = target_entity;
-            const relationType = target_entity;
+  }
+  return relationshipString;
+}
 
-            const relationFields = `fields: ${parseRelationshipArg(
-              sourceColumn
-            )}, `;
-            const relationReferences = `references: ${parseRelationshipArg(
-              targetColumn
-            )}`;
+getMetaData().then((response) => {
+  var modelString = "";
+  const metaData = response.data.Result.metadata;
+  const entityRelationships = response.data.Result.entity_relationship;
 
-            relationshipString = ` ${target_entity} ${relationType} @relation(${relationName}, ${relationFields}${relationReferences})`;
-          }
-        } else if (modelname == target_entity) {
-          if (field == targetColumn) {
-            relationshipString =
-              relationshipString == ""
-                ? `${entity}_FK ${entity}[] @relation(${relationName})`
-                : relationshipString +
-                  `\n ${entity}_FK ${entity}[] @relation(${relationName})`;
-          }
-        }
-      }
-    );
+  for (var i = 0; i < metaData.length; i++) {
+    const modelName = metaData[i].entity;
+    const fields = metaData[i].fields;
 
-    return relationshipString;
-  };
+    modelString = `${modelString}model ${modelName}{\n`;
 
-  const parseModelFields = (modelname, fields, relationships) => {
-    return fields.map(({ name, properties }) => {
-      if (name == "_id") return null;
+    for (var j = 0; j < fields.length; j++) {
+      var fieldName = fields[j].name;
+      var fieldDataType = fields[j].properties.datatype;
 
-      const relationship = parseRelationship(modelname, name, relationships);
+      var name = validataFieldName(fieldName, modelName);
+      var type = validateDataType(fieldName, fieldDataType);
+      var attributes = validateAttributes(fieldName);
+      var relationships = validateRelationships(
+        modelName,
+        fieldName,
+        entityRelationships
+      );
 
-      const autoIncrement =
-        (name == "id") | (name == "Id") ? "@id @default(autoincrement())" : "";
+      modelString =
+        relationships == ""
+          ? `${modelString} ${name} ${type} ${attributes}\n`
+          : `${modelString} ${name} ${type} ${attributes}\n ${relationships}\n`;
+    }
+    modelString = `${modelString}}\n`;
+  }
 
-      const type =
-        properties.datatype == "string"
-          ? "String"
-          : properties.datatype === "number"
-          ? "Int"
-          : properties.datatype === "integer"
-          ? "Int"
-          : properties.datatype === "boolean"
-          ? "Boolean"
-          : properties.datatype === "datetime"
-          ? "DateTime"
-          : properties.datatype === "date"
-          ? "DateTime @db.Date"
-          : properties.datatype === "object"
-          ? "String"
-          : properties.datatype === "dimension"
-          ? "String"
-          : properties.datatype === "array"
-          ? "Int"
-          : "Unsupported";
+  fs.writeFileSync("./prisma/schema.prisma", "");
+  fs.writeFileSync("./prisma/schema.prisma",fs.readFileSync("./prisma/generator_schema.prisma"));
 
-      return relationship != ""
-        ? `    ${name} ${type} ${autoIncrement} \n   ${relationship}`
-        : `    ${name} ${type} ${autoIncrement}`;
-    });
-  };
-
-  const parseModels = (models, relationships) => {
-    return models.reduce((a, { entity, fields, ...rest }) => {
-      return [
-        ...a,
-        `model ${entity} {`,
-        ...parseModelFields(entity, fields, relationships),
-        "}",
-        "",
-        "",
-      ];
-    }, []);
-  };
-
-  const parseEnumFields = (fields) => {
-    return fields.map((field) => `  ${field}`);
-  };
-
-  const parseEnums = (enums) => {
-    return enums.reduce((a, { name, fields }) => {
-      return [...a, `enum ${name} {`, ...parseEnumFields(fields), "}"];
-    }, []);
-  };
-
-  const prismaSchema = Object.entries(jsonSchema.Result).reduce(
-    (a, [type, values]) => {
-      if (type === "metadata") {
-        return [
-          ...a,
-          ...parseModels(values, jsonSchema.Result.entity_relationship),
-        ];
-      }
-
-      if (type === "enums") {
-        return [...a, ...parseEnums(values)];
-      }
-
-      return a;
-    },
-    []
-  );
-
-  fs.appendFileSync("./prisma/schema.prisma", prismaSchema.join("\n"));
+  fs.appendFile("./prisma/schema.prisma", modelString, (err) => {
+    if (err) {
+      console.error(err);
+      return;
+    }
+  });
 });
 

@@ -21,7 +21,7 @@ exports.getMetaData = async () => {
   try {
     const response = await axios(config);
     if (response.status === 200) {
-      return JSON.stringify(response.data);
+      return response;
     }
     return false;
   } catch (err) {
